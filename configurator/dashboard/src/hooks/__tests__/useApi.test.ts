@@ -7,7 +7,7 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
-import { useApi } from '../useApi';
+import { useApi, invalidateCache } from '../useApi';
 import type { ApiResponse } from '@/types';
 
 // Helper to create mock response
@@ -30,6 +30,7 @@ describe('useApi', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     sessionStorage.clear();
+    invalidateCache();
     // Create fresh spy on fetch
     fetchSpy = vi.spyOn(global, 'fetch');
   });
@@ -38,8 +39,7 @@ describe('useApi', () => {
     fetchSpy.mockRestore();
   });
 
-  // TODO: Fix async timing issues with fetch mock
-  it.skip('should fetch data successfully', async () => {
+  it('should fetch data successfully', async () => {
     const mockData = { id: 1, name: 'Test' };
     const mockResponse: ApiResponse<typeof mockData> = {
       success: true,
@@ -63,8 +63,7 @@ describe('useApi', () => {
     expect(result.current.status).toBe(200);
   });
 
-  // TODO: Fix async timing issues with fetch mock
-  it.skip('should handle fetch errors', async () => {
+  it('should handle fetch errors', async () => {
     const errorMessage = 'Network error';
 
     fetchSpy.mockImplementation(() => createMockResponse(errorMessage, false, 500));
@@ -80,8 +79,7 @@ describe('useApi', () => {
     expect(result.current.status).toBe(500);
   });
 
-  // TODO: Fix async timing issues with fetch mock
-  it.skip('should handle API errors', async () => {
+  it('should handle API errors', async () => {
     const mockResponse: ApiResponse<unknown> = {
       success: false,
       error: 'Invalid request',
@@ -109,28 +107,34 @@ describe('useApi', () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
-  // TODO: Fix async timing issues with fetch mock
-  it.skip('should refetch data manually', async () => {
-    const mockData = { id: 1 };
-    const mockResponse: ApiResponse<typeof mockData> = {
-      success: true,
-      data: mockData,
-    };
+  it('should refetch data manually', async () => {
+    const firstData = { message: 'first' };
+    const secondData = { message: 'second' };
 
-    fetchSpy.mockImplementation(() => createMockResponse(mockResponse));
+    fetchSpy
+      .mockResolvedValueOnce(createMockResponse({
+        success: true,
+        data: firstData,
+      }))
+      .mockResolvedValueOnce(createMockResponse({
+        success: true,
+        data: secondData,
+      }));
 
-    const { result } = renderHook(() => useApi<typeof mockData>('/api/test'));
+    const { result } = renderHook(() => useApi('/api/test', { useCache: false }));
 
     await waitFor(() => {
-      expect(result.current.loading).toBe(false);
+      expect(result.current.data).toEqual(firstData);
     });
 
     expect(fetchSpy).toHaveBeenCalledTimes(1);
 
-    // Refetch
     await act(async () => {
-      result.current.refetch();
-      await new Promise((r) => setTimeout(r, 10));
+      await result.current.refetch();
+    });
+
+    await waitFor(() => {
+      expect(result.current.data).toEqual(secondData);
     });
 
     expect(fetchSpy).toHaveBeenCalledTimes(2);
